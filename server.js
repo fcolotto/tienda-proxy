@@ -1,5 +1,5 @@
 // === CONFIGURACIÓN ===
-require('dotenv').config({ path: __dirname + '/.env', debug: true });
+// require('dotenv').config({ path: __dirname + '/.env', debug: true });
 console.log('API_KEY loaded?', (process.env.API_KEY || '').length);
 
 const express = require('express');
@@ -259,5 +259,5 @@ app.get('/api/products/:id/variants', checkKey, async (req, res) => {
 });
 
 // === INICIO DEL SERVIDOR ===
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Servidor corriendo en puerto ${port}`));
+module.exports = app;
+
