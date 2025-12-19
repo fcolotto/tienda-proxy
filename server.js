@@ -147,9 +147,10 @@ app.get('/api/orders/:id/shipping', checkKey, async (req, res) => {
 
 // === PRODUCTOS ===
 
-// Búsqueda por nombre o SKU (con filtro local, detalles ampliados y precio completo)
+// Búsqueda por nombre o handle (con filtro local, detalles ampliados, precio y link de compra correcto)
 app.get('/api/products', checkKey, async (req, res) => {
   const { q = '', limit = 20, page = 1 } = req.query;
+
   try {
     const url = `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products?limit=200&page=${page}`;
     const r = await fetch(url, {
@@ -158,19 +159,22 @@ app.get('/api/products', checkKey, async (req, res) => {
         'User-Agent': process.env.TN_USER_AGENT,
       },
     });
+
     const arr = await r.json();
     if (!r.ok) return res.status(r.status).json(arr);
 
     // 🔍 Filtro local (por nombre o handle)
     const term = q.toLowerCase().trim();
     const filtered = arr.filter(p => {
-      const nameRaw = p.name && (p.name.es || p.name.pt || p.name.en) || '';
+      const nameRaw = (p.name && (p.name.es || p.name.pt || p.name.en)) || '';
       const name = typeof nameRaw === 'string' ? nameRaw.toLowerCase() : '';
       const handle = typeof p.handle === 'string' ? p.handle.toLowerCase() : '';
       return !term || name.includes(term) || handle.includes(term);
     });
 
-    const list = filtered.slice(0, limit).map(p => {
+    const base = (process.env.STORE_BASE_URL || '').replace(/\/+$/, ''); // ej: https://www.mariatboticario.shop
+
+    const list = filtered.slice(0, Number(limit) || 20).map(p => {
       // 💰 Obtener precio desde distintos posibles campos
       let price = null;
       if (p.price) {
@@ -193,6 +197,20 @@ app.get('/api/products', checkKey, async (req, res) => {
         }
       }
 
+      // 🔗 Link de compra canónico (NO inventado por el GPT)
+      const apiPermalink = p.permalink || null;
+      const handle = (p.handle || '').replace(/^\/+/, '');
+
+      let buy_url = null;
+      if (typeof apiPermalink === 'string' && apiPermalink.trim()) {
+        buy_url = apiPermalink.startsWith('http')
+          ? apiPermalink
+          : (base ? `${base}${apiPermalink.startsWith('/') ? '' : '/'}${apiPermalink}` : apiPermalink);
+      } else if (base && handle) {
+        // Si tu tienda usa otra ruta, cambiás SOLO esta línea (por ahora probemos así)
+        buy_url = `${base}/productos/${handle}`;
+      }
+
       return {
         id: p.id,
         name: (p.name && (p.name.es || p.name.pt || p.name.en)) || p.handle || '',
@@ -200,7 +218,7 @@ app.get('/api/products', checkKey, async (req, res) => {
         compare_price: comparePrice,
         sku: p.sku || null,
         available: p.published,
-        permalink: p.permalink || null,
+        buy_url, // ✅ USAR ESTE CAMPO EN EL BOT
         description: (p.description && (p.description.es || p.description.pt || p.description.en)) || null,
         image: (p.images && p.images.length > 0 ? p.images[0].src : null),
       };
