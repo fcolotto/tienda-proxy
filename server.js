@@ -208,7 +208,7 @@ app.get('/api/products', checkKey, async (req, res) => {
           : (base ? `${base}${apiPermalink.startsWith('/') ? '' : '/'}${apiPermalink}` : apiPermalink);
       } else if (base && handle) {
         // Si tu tienda usa otra ruta, cambiás SOLO esta línea (por ahora probemos así)
-        buy_url = `${base}/productos/${handle}`;
+        buy_url = `${base}/productos/${handle}/`;
       }
 
       return {
