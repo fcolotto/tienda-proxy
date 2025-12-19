@@ -261,76 +261,49 @@ app.get('/api/products/:id/variants', checkKey, async (req, res) => {
 // === PROMOS / DESCUENTOS ===
 app.get("/api/promos", checkKey, async (req, res) => {
   try {
+    // Promo fija (controlada por la marca)
+    const firstPurchase = {
+      code: "PRIMERACOMPRA",
+      discount: "10%",
+      applies_to: "primera compra",
+    };
+
+    // (Opcional) Hint interno: si hay productos con precio promocional hoy
+    // Esto NO expone cupones ni reglas, solo indica si existen promos puntuales.
     const headers = {
       Authentication: `bearer ${process.env.TN_ACCESS_TOKEN}`,
       "User-Agent": process.env.TN_USER_AGENT,
     };
 
-    // 1) Cupones (codes)
-    // Docs: Coupons resource (Nuvemshop/Tiendanube API)
-    // Nota: el endpoint exacto es /coupons (según docs).
-    const couponsResp = await fetch(
-      `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/coupons`,
-      { headers }
-    );
-
-    let coupons = [];
-    if (couponsResp.ok) {
-      const raw = await couponsResp.json();
-      // Devolvemos “lo mínimo útil” para el bot
-      coupons = (Array.isArray(raw) ? raw : []).map((c) => ({
-        code: c.code || c.coupon || null,
-        type: c.type || null,               // percentage / absolute / free_shipping (según docs)
-        value: c.value ?? null,
-        starts_at: c.starts_at || c.start_date || null,
-        ends_at: c.ends_at || c.end_date || null,
-        active: c.active ?? c.enabled ?? null,
-      }));
-    }
-
-    // 2) Discounts (reglas)
-    // Existe Discount API (rules). Endpoint puede variar según tu integración/permisos.
-    // Intento best-effort: si falla, seguimos.
-    let discount_rules = [];
-    const discountsResp = await fetch(
-      `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/discounts`,
-      { headers }
-    );
-    if (discountsResp.ok) {
-      const raw = await discountsResp.json();
-      discount_rules = (Array.isArray(raw) ? raw : []).map((d) => ({
-        id: d.id ?? null,
-        name: d.name ?? d.title ?? null,
-        starts_at: d.starts_at || d.start_date || null,
-        ends_at: d.ends_at || d.end_date || null,
-        active: d.active ?? d.enabled ?? null,
-        type: d.type ?? null,
-      }));
-    }
-
-    // 3) Hint: hay productos con precio promocional?
-    // Products admite filtro has_promotional_price (según docs)
     let promotional_products_hint = { has_any: null };
-    const promoProdResp = await fetch(
-      `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products?has_promotional_price=true&limit=1&page=1`,
-      { headers }
-    );
-    if (promoProdResp.ok) {
-      const arr = await promoProdResp.json();
-      promotional_products_hint = { has_any: Array.isArray(arr) && arr.length > 0 };
+    try {
+      const promoProdResp = await fetch(
+        `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products?has_promotional_price=true&limit=1&page=1`,
+        { headers }
+      );
+      if (promoProdResp.ok) {
+        const arr = await promoProdResp.json();
+        promotional_products_hint = { has_any: Array.isArray(arr) && arr.length > 0 };
+      }
+    } catch (_) {
+      // si falla, no pasa nada
+      promotional_products_hint = { has_any: null };
     }
 
     return res.json({
-      coupons,
-      discount_rules,
-      promotional_products_hint,
+      policy: "fixed_only",
+      message:
+        `Tenemos un ${firstPurchase.discount} OFF para primera compra con el cupón ${firstPurchase.code}. ` +
+        `Las promociones puntuales y cupones temporales los publicamos en nuestro Instagram @mariat.boticario ✨`,
+      first_purchase_coupon: firstPurchase,
+      instagram: "@mariat.boticario",
+      promotional_products_hint, // podés borrarlo si no lo querés ni como hint
       fetched_at: new Date().toISOString(),
     });
   } catch (e) {
     return res.status(500).json({ error: "proxy_error", detail: e.message });
   }
 });
-
 
 // === INICIO DEL SERVIDOR ===
 module.exports = app;
