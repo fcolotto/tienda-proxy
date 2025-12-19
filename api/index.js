@@ -81,7 +81,7 @@ app.get("/api/products", checkKey, async (req, res) => {
   }
 });
 
-// ====== PRODUCT LINK DIRECT ======
+// ====== PRODUCT LINK DIRECT (usa mismo flujo que precio) ======
 app.get("/api/product-link", checkKey, async (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) return res.status(400).json({ error: "missing_q" });
@@ -98,14 +98,15 @@ app.get("/api/product-link", checkKey, async (req, res) => {
     let best = null;
     let bestScore = -1;
 
+    // Recorremos productos igual que para precio
     for (let page = 1; page <= 20; page++) {
-      const listResp = await fetch(
+      const r = await fetch(
         `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products?limit=200&page=${page}`,
         { headers }
       );
 
-      const arr = await listResp.json();
-      if (!listResp.ok) return res.status(listResp.status).json(arr);
+      const arr = await r.json();
+      if (!r.ok) return res.status(r.status).json(arr);
       if (!Array.isArray(arr) || arr.length === 0) break;
 
       for (const p of arr) {
@@ -136,30 +137,30 @@ app.get("/api/product-link", checkKey, async (req, res) => {
       return res.status(404).json({ error: "not_found" });
     }
 
-    const detResp = await fetch(
-      `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products/${best.id}`,
-      { headers }
-    );
-    const data = await detResp.json();
-    if (!detResp.ok) return res.status(detResp.status).json(data);
-
+    // 🔗 Construcción de link REAL (sin inventar)
     let buy_url = null;
-    const apiPermalink = data.permalink || null;
+    if (typeof best.permalink === "string" && best.permalink.trim()) {
+      buy_url = best.permalink.startsWith("http")
+        ? best.permalink
+        : `${base}${best.permalink.startsWith("/") ? "" : "/"}${best.permalink}`;
+    }
 
-    if (typeof apiPermalink === "string" && apiPermalink.trim()) {
-      buy_url = apiPermalink.startsWith("http")
-        ? apiPermalink
-        : `${base}${apiPermalink.startsWith("/") ? "" : "/"}${apiPermalink}`;
-    } else {
-      const handle = (data.handle || "").replace(/^\/+/, "");
-      if (base && handle) buy_url = `${base}/productos/${handle}/`;
+    // Si no hay permalink, NO inventamos
+    if (!buy_url) {
+      return res.json({
+        id: best.id,
+        name: best.name?.es || best.name?.pt || best.name?.en || best.handle,
+        buy_url: null,
+        note: "no_direct_link_available"
+      });
     }
 
     return res.json({
-      id: data.id,
-      name: data.name?.es || data.name?.pt || data.name?.en || data.handle,
+      id: best.id,
+      name: best.name?.es || best.name?.pt || best.name?.en || best.handle,
       buy_url,
     });
+
   } catch (e) {
     return res.status(500).json({ error: "proxy_error", detail: e.message });
   }
