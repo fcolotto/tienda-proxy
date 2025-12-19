@@ -249,6 +249,15 @@ app.get('/api/product-link', checkKey, async (req, res) => {
       { headers }
     );
     const arr = await listResp.json();
+	console.log(
+	  "DEBUG products sample:",
+	  (arr || []).slice(0, 10).map(p => ({
+	    id: p.id,
+	    name: p.name,
+	    handle: p.handle
+	  }))
+	);
+
     if (!listResp.ok) return res.status(listResp.status).json(arr);
 
     const term = q.toLowerCase();
