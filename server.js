@@ -253,21 +253,23 @@ app.get('/api/product-link', checkKey, async (req, res) => {
 
     const term = q.toLowerCase();
 
-    // 2) Mejor match: prioriza nombre exacto/contiene, luego handle
-    const best = (arr || []).find(p => {
-      const nameRaw = (p.name && (p.name.es || p.name.pt || p.name.en)) || '';
-      const name = typeof nameRaw === 'string' ? nameRaw.toLowerCase() : '';
-      return name === term;
-    }) || (arr || []).find(p => {
-      const nameRaw = (p.name && (p.name.es || p.name.pt || p.name.en)) || '';
-      const name = typeof nameRaw === 'string' ? nameRaw.toLowerCase() : '';
-      const handle = typeof p.handle === 'string' ? p.handle.toLowerCase() : '';
-      return name.includes(term) || handle.includes(term);
-    });
+    // 2) Mejor match: prioriza nombre que incluya el término, luego handle
+let best = (arr || []).find(p => {
+  const nameRaw = (p.name && (p.name.es || p.name.pt || p.name.en)) || '';
+  const name = typeof nameRaw === 'string' ? nameRaw.toLowerCase() : '';
+  return name.includes(term);
+});
 
-    if (!best?.id) {
-      return res.status(404).json({ error: 'not_found' });
-    }
+if (!best) {
+  best = (arr || []).find(p => {
+    const handle = typeof p.handle === 'string' ? p.handle.toLowerCase() : '';
+    return handle.includes(term);
+  });
+}
+
+if (!best?.id) {
+  return res.status(404).json({ error: 'not_found' });
+}
 
     // 3) Detalle del producto (más confiable para permalink)
     const detResp = await fetch(
