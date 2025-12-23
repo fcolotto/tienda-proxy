@@ -1,0 +1,117 @@
+const fetch = require("node-fetch");
+
+// API KEY
+function checkKey(req, res) {
+  const provided = (req.query.key || req.headers["x-api-key"] || "").trim();
+  const expected = (process.env.API_KEY || "").trim();
+  if (!provided || provided !== expected) {
+    res.status(401).json({ error: "unauthorized", reason: "bad_key" });
+    return false;
+  }
+  return true;
+}
+
+function normalize(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[‐-‒–—−]/g, "-")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickLang(obj) {
+  if (!obj) return "";
+  if (typeof obj === "string") return obj;
+  return obj.es || obj.pt || obj.en || "";
+}
+
+function buildBuyUrl(permalink, base) {
+  if (!permalink) return null;
+  const p = String(permalink).trim();
+  if (!p) return null;
+  if (p.startsWith("http")) return p;
+  if (!base) return p;
+  const b = String(base || "").replace(/\/+$/, "");
+  return `${b}${p.startsWith("/") ? "" : "/"}${p}`;
+}
+
+module.exports = async (req, res) => {
+  if (!checkKey(req, res)) return;
+
+  const q = String(req.query.q || "").trim();
+  const limit = Math.min(Math.max(parseInt(req.query.limit || "10", 10), 1), 20);
+  const qNorm = normalize(q);
+  const words = qNorm.split(" ").filter((w) => w.length >= 3);
+
+  const headers = {
+    Authentication: `bearer ${process.env.TN_ACCESS_TOKEN}`,
+    "User-Agent": process.env.TN_USER_AGENT,
+  };
+
+  const base = String(process.env.STORE_BASE_URL || "").replace(/\/+$/, "");
+
+  try {
+    const results = [];
+    const maxPages = 30;
+
+    for (let page = 1; page <= maxPages; page++) {
+      const r = await fetch(
+        `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products?limit=200&page=${page}`,
+        { headers }
+      );
+
+      const arr = await r.json();
+      if (!r.ok) return res.status(r.status).json(arr);
+      if (!Array.isArray(arr) || arr.length === 0) break;
+
+      for (const p of arr) {
+        const name = pickLang(p.name);
+        const handle = p.handle || "";
+
+        const nameNorm = normalize(name);
+        const handleNorm = normalize(handle);
+
+        const match =
+          !qNorm ||
+          nameNorm.includes(qNorm) ||
+          handleNorm.includes(qNorm) ||
+          words.some((w) => nameNorm.includes(w) || handleNorm.includes(w));
+
+        if (!match) continue;
+
+        // detalle para precio + permalink
+        const detResp = await fetch(
+          `https://api.tiendanube.com/v1/${process.env.TN_STORE_ID}/products/${p.id}`,
+          { headers }
+        );
+        const data = await detResp.json();
+        if (!detResp.ok) continue;
+
+        let price = null;
+        const priceLang = pickLang(data.price);
+        if (priceLang) price = priceLang;
+        if (!price && Array.isArray(data.variants) && data.variants[0]?.price != null) {
+          price = data.variants[0].price;
+        }
+
+        results.push({
+          id: data.id,
+          name: pickLang(data.name) || data.handle || "",
+          price,
+          buy_url: buildBuyUrl(data.permalink, base),
+        });
+
+        if (results.length >= limit) break;
+      }
+
+      if (results.length >= limit) break;
+    }
+
+    return res.json(results);
+  } catch (e) {
+    return res.status(500).json({ error: "proxy_error", detail: e.message });
+  }
+};
